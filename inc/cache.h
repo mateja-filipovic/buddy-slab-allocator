@@ -57,7 +57,7 @@ typedef struct kmem_cache_s{
 }kmem_cache_s;
 
 slab_s* allocate_a_slab(int obj_size, int block_num, void(*ctor)(void*), int offs); //allocate a new slab
-void deallocate_a_slab(slab_s* sl); //free a slab
+void deallocate_a_slab(slab_s* sl, void(*dtor)(void*)); //destruct every object and free a slab
 
 void* allocate_obj_from_slab(slab_s* sl); //allocate an object and initialize it
 int dealloc_obj_from_slab(slab_s* sl, void* obj, void(*dtor)(void*)); //return 0 if dealloc is successful

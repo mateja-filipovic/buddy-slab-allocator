@@ -77,7 +77,13 @@ void* allocate_obj_from_slab(slab_s* sl) {
 	return ret;
 }
 
-void deallocate_a_slab(slab_s* sl){
+void deallocate_a_slab(slab_s* sl, void(*dtor)(void*)){
+	int i;
+	if (dtor != NULL) {
+		for (i = 0; i < sl->capacity; i++)
+			(*dtor)(get_obj_address(sl, i));
+	}
+
 	buddy_deallocate(sl->base_addr, sl->num_of_blocks);
 	buddy_deallocate((void*)sl, 1);
 }

@@ -116,7 +116,7 @@ int _kmem_cache_shrink(kmem_cache_t* cachep) {
 		helper = tmp->next;
 		cachep->num_of_blocks -= (cachep->blocks_per_slab + 1);
 		num_freed += cachep->blocks_per_slab + 1;
-		deallocate_a_slab(tmp);
+		deallocate_a_slab(tmp, cachep->dtor);
 		tmp = helper;
 	}
 
@@ -359,14 +359,14 @@ void _kmem_cache_destroy(kmem_cache_t* cachep) {
 	tmp = cachep->empty_slabs, helper = NULL;
 	while (tmp != NULL) {
 		helper = tmp->next;
-		deallocate_a_slab(tmp);
+		deallocate_a_slab(tmp, cachep->dtor);
 		tmp = helper;
 	}
 	//deallocate partial slabs
 	tmp = cachep->partial_slabs, helper = NULL;
 	while (tmp != NULL) {
 		helper = tmp->next;
-		deallocate_a_slab(tmp);
+		deallocate_a_slab(tmp, cachep->dtor);
 		tmp = helper;
 	}
 
@@ -374,7 +374,7 @@ void _kmem_cache_destroy(kmem_cache_t* cachep) {
 	tmp = cachep->full_slabs, helper = NULL;
 	while (tmp != NULL) {
 		helper = tmp->next;
-		deallocate_a_slab(tmp);
+		deallocate_a_slab(tmp, cachep->dtor);
 		tmp = helper;
 	}
 
