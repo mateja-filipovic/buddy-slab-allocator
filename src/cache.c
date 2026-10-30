@@ -89,6 +89,8 @@ int dealloc_obj_from_slab(slab_s* sl, void* obj, void(*dtor)(void*)){
 	int obj_index = get_obj_index(sl, obj);
 	if (obj_index == -1)
 		return -2; //the obj is not from this slab
+	if (get_bit(sl, obj_index) == 0)
+		return -3; //the slot is already free
 
 	//update the free slots list
 	set_bit(sl, obj_index, 0);
