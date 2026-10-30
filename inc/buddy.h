@@ -1,7 +1,7 @@
 #ifndef _BUDDY_H_
 #define _BUDDY_H_
 
-#include "slab.h"
+#include "params.h"
 
 #define POOL_MAX_SIZE 32
 
@@ -15,6 +15,8 @@ typedef struct buddy_s {
 
 	void* pool[32];
 }buddy_s;
+
+extern buddy_s* BUDDY;
 
 void buddy_init(void* space, int numOfBlocks); //initalize
 void* buddy_allocate(int sizeInBlocks); //allocate space given block size needed

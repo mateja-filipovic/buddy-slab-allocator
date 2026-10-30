@@ -5,17 +5,24 @@ An implementation of a kernel memory allocator. FrontEnd consists of a Slab Allo
 
 ## Some important notes
 * the project is written in C
-* the project is tested using Microsoft Visual Studio
-* the implementation is windows only, because it contains concurrency sync logic specific to windows
-* everything is thread safe, sync is done using semaphores from the `<windows.h>` header file
+* the project builds with CMake on Windows, macOS and Linux
+* everything is thread safe, sync is done with a Windows semaphore or a POSIX mutex depending on the platform
 * for the project to work, the allocator must first be initialized using the `kmem_init(void*, int)` function
-* the main file contains a simple test used to check core functionality
+* `kmem_cache_shrink` only frees empty slabs if the cache has not grown since the previous shrink call
+* the `tests` directory contains the automated tests, `src/main.c` is a small demo
 
 ## Usage
 - clone the project
     ``` bash
     git clone https://github.com/mateja-filipovic/Buddy-Slab-Allocator.git
     ```
-- compile the project
-- run the executable of the `main.c` file, that contains a simple test
-- The test checks functionalities like creating caches, shrinking them, allocation and deallocation of objects as well as error checking
+- configure and build
+    ``` bash
+    cmake -S . -B build
+    cmake --build build
+    ```
+- run the tests
+    ``` bash
+    ctest --test-dir build --output-on-failure
+    ```
+- run the demo in `build/demo`, which creates a cache, allocates and frees objects, shrinks the cache and checks for errors

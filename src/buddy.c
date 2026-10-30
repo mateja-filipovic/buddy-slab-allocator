@@ -52,7 +52,7 @@ void* buddy_allocate(int sizeInBlocks){
 
 	//find the first big enough chunk available
 	for (;; i++) {
-		if (i > BUDDY->max_order)
+		if (i > (int)BUDDY->max_order)
 			return NULL;
 		if (BUDDY->pool[i])
 			break;
@@ -75,26 +75,23 @@ void buddy_deallocate(void* blkAddr, int sizeInBlocks){
 	for (i = 0; _get_blk_size(i) < sizeInBlocks; i++);
 	void* bud = _get_buddy_of(blkAddr, i);
 
-	//add it to the pool of free blocks
-	void** p = &BUDDY->pool[i];
-
 	//find the buddy in the same pool index
-	while ((*p != NULL) && (*p != bud))
-		p = (void**)*p;
+	void** p = &BUDDY->pool[i];
+	if (bud != NULL)
+		while ((*p != NULL) && (*p != bud))
+			p = (void**)*p;
 
 	//if buddy is not found/free
-	if (bud > BUDDY->ending_addr || *p != bud) {
+	if (bud == NULL || *p != bud) {
 		*(void**)blkAddr = BUDDY->pool[i];
 		BUDDY->pool[i] = blkAddr;
 	}
 	else { //if the buddy is free
-		if (bud != 0) { //this check added for nullptr warning, REVERT IF NEEDED, but should not be a problem
-			*p = *(void**)bud;
-			if (blkAddr > bud) //if the buddy is free, dealloc the bigger block starting from buddy address
-				buddy_deallocate(bud, _get_blk_size(i + 1));
-			else //if the buddy is free, dealloc the bigger block starting from the starting block addr
-				buddy_deallocate(blkAddr, _get_blk_size(i + 1));
-		}
+		*p = *(void**)bud;
+		if (blkAddr > bud) //if the buddy is free, dealloc the bigger block starting from buddy address
+			buddy_deallocate(bud, _get_blk_size(i + 1));
+		else //if the buddy is free, dealloc the bigger block starting from the starting block addr
+			buddy_deallocate(blkAddr, _get_blk_size(i + 1));
 	}
 }
 
@@ -112,12 +109,12 @@ int _ceil_log2(unsigned long n) {
 void* _get_buddy_of(void* b, int i) { 
 	//for the algorithm to work, heap start must be 0
 	//so offset the starting address by buddy->starting_addr
-	int tmp = (int)b - (int)BUDDY->starting_addr;
-	tmp ^= (1 << (i + 12)); //must add +12 cos block size is 4096 = 2^12
+	size_t tmp = (char*)b - (char*)BUDDY->starting_addr;
+	tmp ^= ((size_t)1 << (i + 12)); //must add +12 cos block size is 4096 = 2^12
 	//after the calc is finished, add the offset back!
-	void* ret = (void*)((char*)BUDDY->starting_addr + tmp);
+	void* ret = (char*)BUDDY->starting_addr + tmp;
 	//error checking
-	if (ret > BUDDY->ending_addr)
-		return 0;
+	if (ret >= BUDDY->ending_addr)
+		return NULL;
 	return ret;
 }

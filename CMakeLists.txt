@@ -1,0 +1,25 @@
+cmake_minimum_required(VERSION 3.16)
+project(buddy_slab C)
+
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+add_library(kmem src/buddy.c src/cache.c src/slab.c)
+target_include_directories(kmem PUBLIC inc)
+if(MSVC)
+    target_compile_options(kmem PRIVATE /W4)
+else()
+    target_compile_options(kmem PRIVATE -Wall -Wextra)
+    find_package(Threads REQUIRED)
+    target_link_libraries(kmem PUBLIC Threads::Threads)
+endif()
+
+add_executable(demo src/main.c)
+target_link_libraries(demo PRIVATE kmem)
+
+enable_testing()
+foreach(t buddy_split size_class double_free destructor failed_slab shrink cache_free stress)
+    add_executable(test_${t} tests/${t}.c)
+    target_link_libraries(test_${t} PRIVATE kmem)
+    add_test(NAME ${t} COMMAND test_${t})
+endforeach()

@@ -3,55 +3,76 @@
 #include <string.h>
 
 #include "../inc/cache.h"
-#include "../inc/slab.h"
 
-#define MAX_VECT_SIZE 512 //512 * 8 = 4096 maximum
+static slab_s** block_owner;
 
-slab_s* allocate_a_slab(int obj_size, int block_num, void(*ctor)(void*), int offs) {
+static unsigned long block_index(const void* addr) {
+	return ((const char*)addr - (const char*)BUDDY->starting_addr) / BLOCK_SIZE;
+}
 
-	slab_s* sl = buddy_allocate(1);
+int slab_table_init(void) {
+	unsigned long bytes = BUDDY->blocks_total * sizeof(slab_s*);
+	int blocks = (int)((bytes + BLOCK_SIZE - 1) / BLOCK_SIZE);
+	block_owner = buddy_allocate(blocks);
+	if (block_owner == NULL)
+		return -1;
+	memset(block_owner, 0, bytes);
+	return 0;
+}
+
+slab_s* slab_of(const void* addr) {
+	if (addr < BUDDY->starting_addr || addr >= BUDDY->ending_addr)
+		return NULL;
+	return block_owner[block_index(addr)];
+}
+
+void slab_layout(int obj_size, int block_num, int* obj_offset, int* capacity) {
+	int total = block_num * BLOCK_SIZE;
+	int bitvec_bytes = (total / obj_size + 7) / 8;
+	int header = (int)sizeof(slab_s) + bitvec_bytes;
+	header = (header + CACHE_L1_LINE_SIZE - 1) / CACHE_L1_LINE_SIZE * CACHE_L1_LINE_SIZE;
+	*obj_offset = header;
+	*capacity = (total - header) / obj_size;
+}
+
+slab_s* allocate_a_slab(kmem_cache_s* cache, int offs) {
+
+	slab_s* sl = buddy_allocate(cache->blocks_per_slab);
 	//error checking
 	if (sl == NULL) {
-		printf("Slab error: Buddy has no space to allocate another slab manager!\n");
-		return NULL;
-	}
-
-	sl->base_addr = buddy_allocate(block_num);
-
-	if (sl->base_addr == NULL) {
 		printf("Slab error: Can't allocate another slab!\n");
-		buddy_deallocate((void*)sl, 1);
 		return NULL;
 	}
 
-	sl->starting_addr = (char*)sl->base_addr + offs;      //always cast to char* cos of pointer arithmetic!!
-	sl->ending_addr = (char*)sl->base_addr + BLOCK_SIZE * block_num;
+	int obj_offset, capacity;
+	slab_layout(cache->obj_size, cache->blocks_per_slab, &obj_offset, &capacity);
 
+	sl->starting_addr = (char*)sl + obj_offset + offs;      //always cast to char* cos of pointer arithmetic!!
+	sl->ending_addr = (char*)sl + BLOCK_SIZE * cache->blocks_per_slab;
 
-	sl->num_of_blocks = block_num;
-	sl->capacity = (block_num * BLOCK_SIZE) / obj_size;
-	sl->obj_size = obj_size;
+	sl->num_of_blocks = cache->blocks_per_slab;
+	sl->capacity = capacity;
+	sl->obj_size = cache->obj_size;
 
 	sl->num_of_allocs = 0;
 	sl->state = 0;
 
-	sl->next = NULL; //used by the cache manager!
+	sl->cache = cache;
+	sl->prev = NULL;
+	sl->next = NULL;
 	sl->bit_vector = (unsigned char*)sl + sizeof(slab_s);
 	
-	memset(sl->bit_vector, 0, MAX_VECT_SIZE); //svi su slobodni
+	memset(sl->bit_vector, 0, (capacity + 7) / 8); //svi su slobodni
+
+	unsigned long first = block_index(sl);
+	int i;
+	for (i = 0; i < sl->num_of_blocks; i++)
+		block_owner[first + i] = sl;
 
 	//initialize the objects using the ctor provided!
-	sl->ctor = ctor;
-	
-	int i;
-	if (ctor != NULL) {
-		for (i = 0; i < sl->capacity; i++) {
-			void* objp = get_obj_address(sl, i);
-			if (objp < sl->starting_addr || objp >= sl->ending_addr)
-				printf("Slab error: Cannot construct object!");
-			else
-				(*ctor)(objp);
-		}
+	if (cache->ctor != NULL) {
+		for (i = 0; i < sl->capacity; i++)
+			(*cache->ctor)(get_obj_address(sl, i));
 	}
 
 	return sl;
@@ -69,27 +90,27 @@ void* allocate_obj_from_slab(slab_s* sl) {
 	set_bit(sl, i, 1);
 
 	sl->num_of_allocs++;
-	//change the state if necessary
-	if (sl->state == 0)
-		sl->state = 1;
-	else if (sl->num_of_allocs == sl->capacity) //|| sl->first_free == 0) //second condition added, more error checking!
-		sl->state = 2;
+	sl->state = (sl->num_of_allocs == sl->capacity) ? 2 : 1;
 
 	return ret;
 }
 
-void deallocate_a_slab(slab_s* sl, void(*dtor)(void*)){
+void deallocate_a_slab(slab_s* sl){
+	void (*dtor)(void*) = sl->cache->dtor;
 	int i;
 	if (dtor != NULL) {
 		for (i = 0; i < sl->capacity; i++)
 			(*dtor)(get_obj_address(sl, i));
 	}
 
-	buddy_deallocate(sl->base_addr, sl->num_of_blocks);
-	buddy_deallocate((void*)sl, 1);
+	unsigned long first = block_index(sl);
+	for (i = 0; i < sl->num_of_blocks; i++)
+		block_owner[first + i] = NULL;
+
+	buddy_deallocate((void*)sl, sl->num_of_blocks);
 }
 
-int dealloc_obj_from_slab(slab_s* sl, void* obj, void(*dtor)(void*)){
+int dealloc_obj_from_slab(slab_s* sl, const void* obj){
 	
 	if (sl->num_of_allocs == 0)
 		return -1; //no objs allocated
@@ -103,32 +124,49 @@ int dealloc_obj_from_slab(slab_s* sl, void* obj, void(*dtor)(void*)){
 	set_bit(sl, obj_index, 0);
 
 	sl->num_of_allocs--;
-	//change the state if necessary
-	if (sl->state == 2)
-		sl->state = 1;
-	else if (sl->num_of_allocs == 0)
-		sl->state = 0;
+	sl->state = (sl->num_of_allocs == 0) ? 0 : 1;
 
 	/*
 	* NOTE: PROJECT REQS UNCLEAR, NOT SURE IF AN OBJECT SHOULD BE INITIALIZED
 	* AFTER BEING DEALLOCATED, OR JUST DESTRUCTED
 	* UNCOMMENT IF NECESSARY
-	* if (sl->ctor != NULL)
-		* (*sl->ctor)(obj);
+	* if (sl->cache->ctor != NULL)
+		* (*sl->cache->ctor)(obj);
 	*/
 
 	return 0;
 }
 
+void slab_list_push(slab_s** head, slab_s* sl) {
+	sl->prev = NULL;
+	sl->next = *head;
+	if (*head != NULL)
+		(*head)->prev = sl;
+	*head = sl;
+}
+
+void slab_list_remove(slab_s** head, slab_s* sl) {
+	if (sl->prev != NULL)
+		sl->prev->next = sl->next;
+	else
+		*head = sl->next;
+	if (sl->next != NULL)
+		sl->next->prev = sl->prev;
+	sl->prev = NULL;
+	sl->next = NULL;
+}
+
 //get the bit vector index of an object slot
-int get_obj_index(slab_s* sl, void* obj) {
+int get_obj_index(slab_s* sl, const void* obj) {
 	int index = -1;
 	if (obj >= sl->ending_addr || obj < sl->starting_addr)
 		return index;
-	int calc = (unsigned int)(obj)-(unsigned int)(sl->starting_addr);
+	size_t calc = (const char*)obj - (const char*)sl->starting_addr;
 	if (calc % sl->obj_size != 0)
 		return index;
-	return calc / sl->obj_size;
+	if (calc / sl->obj_size >= (size_t)sl->capacity)
+		return index;
+	return (int)(calc / sl->obj_size);
 }
 
 //get object address using a bit vector index
@@ -163,4 +201,3 @@ int get_bit(slab_s* sl, int index) {
 		return 0;
 	}
 }
-

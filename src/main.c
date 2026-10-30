@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 #include "../inc/cache.h"
 
 #define NUM_OF_BLOCKS 1000
@@ -29,7 +31,8 @@ int main() {
 	kmem_cache_info(cache_pcb);
 
 	// SHRINKING THE CACHE
-	printf("Calling cache shrink: blocks freed = %d\n\n", kmem_cache_shrink(cache_pcb));
+	printf("Calling cache shrink right after the cache grew: blocks freed = %d\n", kmem_cache_shrink(cache_pcb));
+	printf("Calling cache shrink again: blocks freed = %d\n\n", kmem_cache_shrink(cache_pcb));
 	kmem_cache_info(cache_pcb);
 
 	// CHECKING FOR ERRORS

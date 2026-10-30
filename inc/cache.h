@@ -2,9 +2,11 @@
 #define _CACHE_H_
 
 #include "buddy.h"
+#include "slab.h"
+
+struct kmem_cache_s;
 
 typedef struct slab_s {
-	void* base_addr; //address of the object block
 	void* starting_addr; //address of the first object in the object block
 	void* ending_addr;
 
@@ -18,9 +20,11 @@ typedef struct slab_s {
 
 	unsigned char* bit_vector; //used for managing free slots
 
-	void (*ctor)(void*); //object constructor
+	struct kmem_cache_s* cache;
 
-	struct slab_s* next; //used by the cache manager
+	//used by the cache manager
+	struct slab_s* prev;
+	struct slab_s* next;
 }slab_s;
 
 typedef struct kmem_cache_s{
@@ -46,6 +50,9 @@ typedef struct kmem_cache_s{
 	int wasted;
 	int offset;
 
+	int growing; //a slab was added since the last shrink
+	int is_size_cache; //serves kmalloc
+
 	//cache name
 	char name[30];
 
@@ -56,14 +63,23 @@ typedef struct kmem_cache_s{
 	struct kmem_cache_s* next;
 }kmem_cache_s;
 
-slab_s* allocate_a_slab(int obj_size, int block_num, void(*ctor)(void*), int offs); //allocate a new slab
-void deallocate_a_slab(slab_s* sl, void(*dtor)(void*)); //destruct every object and free a slab
+//block to slab lookup table
+int slab_table_init(void);
+slab_s* slab_of(const void* addr);
+
+void slab_layout(int obj_size, int block_num, int* obj_offset, int* capacity); //where objects start and how many fit
+
+slab_s* allocate_a_slab(kmem_cache_s* cache, int offs); //allocate a new slab
+void deallocate_a_slab(slab_s* sl); //destruct every object and free a slab
 
 void* allocate_obj_from_slab(slab_s* sl); //allocate an object and initialize it
-int dealloc_obj_from_slab(slab_s* sl, void* obj, void(*dtor)(void*)); //return 0 if dealloc is successful
+int dealloc_obj_from_slab(slab_s* sl, const void* obj); //return 0 if dealloc is successful
+
+void slab_list_push(slab_s** head, slab_s* sl);
+void slab_list_remove(slab_s** head, slab_s* sl);
 
 //helper functions
-int get_obj_index(slab_s* sl, void* obj); //check if the pointer to dealloc is valid
+int get_obj_index(slab_s* sl, const void* obj); //check if the pointer to dealloc is valid
 void* get_obj_address(slab_s* sl, int index);
 
 //for bit vector manipulation
