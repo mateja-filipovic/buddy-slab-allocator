@@ -22,6 +22,7 @@ void buddy_deallocate(void* blkAddr, int sizeInBlocks); //deallocate space given
 
 //helper functions
 int _get_blk_size(int i);
+int _ceil_log2(unsigned long n); //smallest order whose block count covers n
 void* _get_buddy_of(void* b, int i);
 
 #endif

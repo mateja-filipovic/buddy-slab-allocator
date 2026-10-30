@@ -283,7 +283,7 @@ void* _kmalloc(size_t size) {
 		return NULL;
 	}
 
-	int power = (int)ceil(log((double)size) / log(2.0));
+	int power = _ceil_log2(size);
 	//min value is 2^5
 	if (power < 5)
 		power = 5;

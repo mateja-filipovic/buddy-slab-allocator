@@ -1,4 +1,3 @@
-#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -17,7 +16,7 @@ void buddy_init(void* space, int numOfBlocks) {
 	BUDDY->starting_addr = (char*)space + BLOCK_SIZE;
 	BUDDY->ending_addr = (char*)space + numOfBlocks * BLOCK_SIZE;
 	BUDDY->blocks_total = numOfBlocks - 1;
-	BUDDY->max_order = (int)ceil(log(BUDDY->blocks_total) / log(2));
+	BUDDY->max_order = _ceil_log2(BUDDY->blocks_total);
 
 	//initialize the pool to 0
 	int i;
@@ -102,6 +101,13 @@ void buddy_deallocate(void* blkAddr, int sizeInBlocks){
 
 //helper functions
 int _get_blk_size(int i) { return 1 << i; }
+
+int _ceil_log2(unsigned long n) {
+	int i = 0;
+	while ((1UL << i) < n)
+		i++;
+	return i;
+}
 
 void* _get_buddy_of(void* b, int i) { 
 	//for the algorithm to work, heap start must be 0
