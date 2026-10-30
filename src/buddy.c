@@ -63,6 +63,7 @@ void* buddy_allocate(int sizeInBlocks){
 	BUDDY->pool[i] = *(void**)BUDDY->pool[i];
 	while (i-- > order) {
 		bud = _get_buddy_of(block, i);
+		*(void**)bud = BUDDY->pool[i];
 		BUDDY->pool[i] = bud;
 	}
 	return block;
