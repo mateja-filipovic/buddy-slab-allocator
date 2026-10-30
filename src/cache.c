@@ -20,6 +20,7 @@ slab_s* allocate_a_slab(int obj_size, int block_num, void(*ctor)(void*), int off
 
 	if (sl->base_addr == NULL) {
 		printf("Slab error: Can't allocate another slab!\n");
+		buddy_deallocate((void*)sl, 1);
 		return NULL;
 	}
 
