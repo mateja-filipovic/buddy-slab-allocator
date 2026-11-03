@@ -16,7 +16,7 @@ typedef struct slab_s {
 	int state; // 0 - empty, 1 - partial, 2 - full
 	int num_of_allocs; //objects allocated so far
 
-	int obj_size;
+	int stride; //object size rounded up to OBJ_ALIGN
 
 	unsigned char* bit_vector; //used for managing free slots
 
@@ -38,13 +38,13 @@ typedef struct kmem_cache_s{
 	int count_full;
 
 	int obj_size;
+	int stride; //object size rounded up to OBJ_ALIGN
 	int num_of_allocated_objs;
 	int objs_per_slab;
 	int blocks_per_slab;
 	int num_of_blocks;
 
-	//how many errors has this cache managed
-	int num_of_errors;
+	int last_error; //KMEM_ERR_* code
 
 	//used for L1 cache alignment
 	int wasted;
@@ -59,6 +59,8 @@ typedef struct kmem_cache_s{
 	void (*ctor)(void*);
 	void (*dtor)(void*);
 
+	kmem_lock_t lock;
+
 	//used for making a linked list of caches
 	struct kmem_cache_s* next;
 }kmem_cache_s;
@@ -67,7 +69,7 @@ typedef struct kmem_cache_s{
 int slab_table_init(void);
 slab_s* slab_of(const void* addr);
 
-void slab_layout(int obj_size, int block_num, int* obj_offset, int* capacity); //where objects start and how many fit
+void slab_layout(int stride, int block_num, int* obj_offset, int* capacity); //where objects start and how many fit
 
 slab_s* allocate_a_slab(kmem_cache_s* cache, int offs); //allocate a new slab
 void deallocate_a_slab(slab_s* sl); //destruct every object and free a slab

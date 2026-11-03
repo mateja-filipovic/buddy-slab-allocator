@@ -8,7 +8,7 @@ int main(void) {
 	kmem_cache_t* big = kmem_cache_create("big", 100000, NULL, NULL);
 	CHECK(big != NULL);
 	CHECK(kmem_cache_alloc(big) == NULL);
-	CHECK(kmem_cache_error(big) == 1);
+	CHECK(kmem_cache_error(big) == KMEM_ERR_NO_MEMORY);
 	CHECK(big->num_of_blocks == 1);
 
 	kmem_cache_t* small = kmem_cache_create("small", 100, NULL, NULL);

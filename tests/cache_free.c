@@ -10,14 +10,14 @@ int main(void) {
 
 	void* obj = kmem_cache_alloc(a);
 	kmem_cache_free(b, obj);
-	CHECK(kmem_cache_error(b) == 1);
+	CHECK(kmem_cache_error(b) == KMEM_ERR_INVALID_OBJECT);
 	CHECK(a->num_of_allocated_objs == 1);
 
 	kfree(obj);
 	CHECK(a->num_of_allocated_objs == 1);
 
 	kmem_cache_free(a, (char*)obj + 1);
-	CHECK(kmem_cache_error(a) == 1);
+	CHECK(kmem_cache_error(a) == KMEM_ERR_INVALID_OBJECT);
 	CHECK(a->num_of_allocated_objs == 1);
 
 	void* buf = kmalloc(300);

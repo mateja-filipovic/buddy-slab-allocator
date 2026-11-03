@@ -1,6 +1,7 @@
 #ifndef _BUDDY_H_
 #define _BUDDY_H_
 
+#include "kmem_port.h"
 #include "params.h"
 
 #define POOL_MAX_SIZE 32
@@ -12,6 +13,8 @@ typedef struct buddy_s {
 
 	unsigned long blocks_total;
 	unsigned int max_order;
+
+	kmem_lock_t lock;
 
 	void* pool[32];
 }buddy_s;

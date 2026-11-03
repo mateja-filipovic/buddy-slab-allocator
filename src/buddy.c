@@ -1,7 +1,5 @@
-#include <stdio.h>
-#include <string.h>
-
-#include "../inc/buddy.h"
+#include "kmem_port.h"
+#include "buddy.h"
 
 buddy_s* BUDDY;
 
@@ -17,6 +15,7 @@ void buddy_init(void* space, int numOfBlocks) {
 	BUDDY->ending_addr = (char*)space + numOfBlocks * BLOCK_SIZE;
 	BUDDY->blocks_total = numOfBlocks - 1;
 	BUDDY->max_order = _ceil_log2(BUDDY->blocks_total);
+	kmem_lock_init(&BUDDY->lock);
 
 	//initialize the pool to 0
 	int i;
@@ -40,10 +39,14 @@ void buddy_init(void* space, int numOfBlocks) {
 	}
 }
 
+static void buddy_free_unlocked(void* blkAddr, int sizeInBlocks);
+
 void* buddy_allocate(int sizeInBlocks){
 	int i, order;
 	void* block, * bud;
 	i = 0;
+
+	kmem_lock_acquire(&BUDDY->lock);
 
 	//find the minimum size in blocks
 	while (_get_blk_size(i) < sizeInBlocks)
@@ -52,8 +55,10 @@ void* buddy_allocate(int sizeInBlocks){
 
 	//find the first big enough chunk available
 	for (;; i++) {
-		if (i > (int)BUDDY->max_order)
+		if (i > (int)BUDDY->max_order) {
+			kmem_lock_release(&BUDDY->lock);
 			return NULL;
+		}
 		if (BUDDY->pool[i])
 			break;
 	}
@@ -65,10 +70,17 @@ void* buddy_allocate(int sizeInBlocks){
 		*(void**)bud = BUDDY->pool[i];
 		BUDDY->pool[i] = bud;
 	}
+	kmem_lock_release(&BUDDY->lock);
 	return block;
 }
 
 void buddy_deallocate(void* blkAddr, int sizeInBlocks){
+	kmem_lock_acquire(&BUDDY->lock);
+	buddy_free_unlocked(blkAddr, sizeInBlocks);
+	kmem_lock_release(&BUDDY->lock);
+}
+
+static void buddy_free_unlocked(void* blkAddr, int sizeInBlocks){
 	int i;
 
 	//find the order of the block
@@ -89,9 +101,9 @@ void buddy_deallocate(void* blkAddr, int sizeInBlocks){
 	else { //if the buddy is free
 		*p = *(void**)bud;
 		if (blkAddr > bud) //if the buddy is free, dealloc the bigger block starting from buddy address
-			buddy_deallocate(bud, _get_blk_size(i + 1));
+			buddy_free_unlocked(bud, _get_blk_size(i + 1));
 		else //if the buddy is free, dealloc the bigger block starting from the starting block addr
-			buddy_deallocate(blkAddr, _get_blk_size(i + 1));
+			buddy_free_unlocked(blkAddr, _get_blk_size(i + 1));
 	}
 }
 

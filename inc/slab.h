@@ -1,11 +1,16 @@
 #ifndef _slab_h_
 #define _slab_h_
 // File: slab.h
-#include <stdlib.h>
-
+#include "kmem_port.h"
 #include "params.h"
 
 typedef struct kmem_cache_s kmem_cache_t;
+
+//error codes returned by kmem_cache_error
+#define KMEM_ERR_NONE (0)
+#define KMEM_ERR_NO_MEMORY (1)
+#define KMEM_ERR_INVALID_OBJECT (2)
+#define KMEM_ERR_DOUBLE_FREE (3)
 
 void kmem_init(void *space, int block_num);
 kmem_cache_t * kmem_cache_create(const char* name, size_t size, void(*ctor)(void*), void (*dtor)(void*));// Allocate cache
@@ -22,18 +27,12 @@ int kmem_cache_error(kmem_cache_t *cachep); // Print error mes
 int is_cache_valid(void* cachep);
 void print_cache(struct kmem_cache_s* c);
 
-//wrappers call these functions
+//wrappers call these functions with the cache lock held
 int _kmem_cache_free(kmem_cache_t* cachep, const void* objp);
 kmem_cache_t* _kmem_cache_create(const char* name, size_t size, void(*ctor)(void*), void (*dtor)(void*));
 int _kmem_cache_shrink(kmem_cache_t* cachep);
 void* _kmem_cache_alloc(kmem_cache_t* cachep);
-void* _kmalloc(size_t size);
-void _kfree(const void* objp);
+kmem_cache_t* _kmalloc_cache(size_t size);
 void _kmem_cache_destroy(kmem_cache_t* cachep);
-void _kmem_cache_info(kmem_cache_t* cachep);
-
-//sync functions, used in wrappers
-void mutex_wait();
-void mutex_signal();
 
 #endif

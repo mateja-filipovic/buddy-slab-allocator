@@ -1,6 +1,7 @@
 #include <stdio.h>
+#include <stdlib.h>
 
-#include "../inc/cache.h"
+#include "cache.h"
 
 #define NUM_OF_BLOCKS 1000
 #define NUM_OF_OBJS 50

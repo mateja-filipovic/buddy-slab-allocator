@@ -14,6 +14,7 @@
   <a href="#upotreba">Upotreba</a> ·
   <a href="#dizajn">Dizajn</a> ·
   <a href="#testovi">Testovi</a> ·
+  <a href="#xv6-portovi">xv6</a> ·
   <a href="#struktura-projekta">Struktura projekta</a>
 </p>
 
@@ -21,7 +22,7 @@
 
 Ovo je projekat sa predmeta Operativni sistemi 2 na Elektrotehničkom fakultetu Univerziteta u Beogradu. Alokator upravlja kontinualnim memorijskim prostorom koji mu se dodeli pri pokretanju, u blokovima od 4 KB. Sistem parnjaka (engl. buddy) vodi evidenciju o slobodnim blokovima, a sistem ploča (engl. slab) iznad njega dodeljuje objekte fiksne veličine iz keševa, sa opcionim konstruktorima i destruktorima, kao i male memorijske bafere veličine stepena dvojke kroz `kmalloc` i `kfree`. Javni interfejs u `inc/slab.h` prati zaglavlje dato uz postavku zadatka.
 
-Projekat se prevodi i radi na macOS-u, Linux-u i Windows-u, a sadrži demo program i skup automatskih testova.
+Projekat se prevodi i radi na macOS-u, Linux-u i Windows-u, a sadrži demo program i skup automatskih testova. Jezgro alokatora ne zavisi od platforme: malo zaglavlje porta obezbeđuje katanac, funkciju za ispis i popunjavanje memorije, sa jednom implementacijom za obične sisteme i dve za xv6 na RISC-V arhitekturi, jednom za kernel i jednom za korisničku biblioteku.
 
 ## Prevođenje
 
@@ -99,7 +100,7 @@ Svaki poziv je thread-safe. Neispravna oslobađanja, dvostruka oslobađanja i al
 
 **Sistem parnjaka.** Slobodni blokovi se čuvaju u listama po redu veličine, za svaki stepen dvojke po jedna. Alokacija uzima najmanji slobodan blok koji odgovara i deli ga naniže; oslobađanje spaja blok sa njegovim parnjakom sve dok je i parnjak slobodan. Prvi blok prostora čuva evidenciju samog sistema parnjaka.
 
-**Keševi i ploče.** Svaki keš drži tri liste ploča: prazne, delimično popunjene i pune. Ploča je niz blokova čija je dužina stepen dvojke; na njenom početku su zaglavlje ploče i bit-vektor slobodnih mesta, a iza njih objekti. Alokacija prvo bira delimično popunjene ploče, zatim prazne, a novu ploču pravi samo kada nijedna od njih ne postoji. Uzastopne ploče počinju objekte na različitim pomerajima u odnosu na keš liniju, tako da se objekti iz različitih ploča ne nadmeću za iste linije L1 keša.
+**Keševi i ploče.** Svaki keš drži tri liste ploča: prazne, delimično popunjene i pune. Ploča je niz blokova čija je dužina stepen dvojke; na njenom početku su zaglavlje ploče i bit-vektor slobodnih mesta, a iza njih objekti, svaki na koraku zaokruženom na 8 bajtova. Alokacija prvo bira delimično popunjene ploče, zatim prazne, a novu ploču pravi samo kada nijedna od njih ne postoji. Uzastopne ploče počinju objekte na različitim pomerajima u odnosu na keš liniju, tako da se objekti iz različitih ploča ne nadmeću za iste linije L1 keša.
 
 **Konstruktori i destruktori.** Konstruktor se izvršava jednom po mestu kada se ploča kreira. Oslobođen objekat se ostavlja takav kakav je, pa se od korisnika očekuje da ga vrati u inicijalizovanom stanju. Destruktor se izvršava nad svakim mestom kada se ploča oslobađa, bilo smanjivanjem keša ili njegovim uništavanjem.
 
@@ -109,7 +110,7 @@ Svaki poziv je thread-safe. Neispravna oslobađanja, dvostruka oslobađanja i al
 
 **Memorija.** Alokator koristi isključivo prostor koji mu je dodeljen. Evidencija sistema parnjaka, tabela blokova, deskriptori keševa i ploče dolaze iz tog prostora.
 
-**Sinhronizacija.** Jedan katanac štiti ceo alokator: semafor na Windows-u, a pthread mutex na ostalim sistemima. Deo zavisan od platforme je nekoliko linija na vrhu fajla `src/slab.c`.
+**Sinhronizacija.** Svaki keš ima sopstveni katanac, sistem parnjaka ima svoj, a kratak katanac štiti listu keševa dok se keš kreira, uništava ili dok se proverava njegova ručka. Katanci se uvek uzimaju redom lista, keš, sistem parnjaka. Tip katanca i njegove četiri operacije dolaze iz zaglavlja porta, pa jezgro nigde ne pominje platformu.
 
 ## Testovi
 
@@ -124,27 +125,48 @@ Testovi se nalaze u `tests/` i pokreću se kroz ctest. Svaki test je samostalan 
 | `failed_slab` | Ploča koja ne može da se alocira ostavlja prostor netaknutim |
 | `shrink` | Zastavica rasta i broj blokova koji smanjivanje vraća |
 | `cache_free` | Oslobađanje u pogrešan keš, neporavnati pokazivači i premeštanje ploča između lista |
+| `alignment` | Objekti su na koraku od 8 bajtova bez obzira na traženu veličinu |
+| `info` | Ispis informacija i grešaka, uključujući procenat popunjenosti |
+| `threads` | Četiri niti istovremeno alociraju i oslobađaju preko sopstvenih keševa i `kmalloc`-a |
 | `stress` | 20 000 nasumičnih alokacija i oslobađanja preko keševa i `kmalloc`-a, uz proveru sadržaja |
 
 Za pokretanje pod sanitajzerima dodajte `-fsanitize=address,undefined` prevodiocu, na primer `cmake -S . -B build -DCMAKE_C_FLAGS="-fsanitize=address,undefined"`.
 
+## xv6 portovi
+
+Isto jezgro radi i unutar [xv6-riscv](https://github.com/mit-pdos/xv6-riscv) operativnog sistema. Zaglavlje porta u `port/xv6-user/` vezuje alokator za korisničku biblioteku xv6-a bez katanaca, za pokretanje test programa kao jednog procesa. Ono u `port/xv6-kernel/` vezuje ga za spinlock-ove kernela i `printk`, a oslobađanje bafera preimenuje u `kmem_kfree`, jer kernel već ima `kfree` na nivou stranica.
+
+`port/xv6/install.sh` kopira jezgro i jedan port u xv6 stablo i ispisuje linije koje treba dodati u Makefile. Može i da prilagodi test program koji koristi API alokatora, dodavanjem xv6 zaglavlja i ispravkom potpisa funkcije `main`.
+
+```sh
+port/xv6/install.sh putanja/do/xv6-riscv user putanja/do/testa/main.c   # port za korisničku biblioteku i test program
+port/xv6/install.sh putanja/do/xv6-riscv kernel                         # port za kernel
+port/xv6/install.sh package alokator.zip                                # samo izvorni kod, za predaju
+```
+
+Posle instalacije za korisnički režim dodajte ispisane linije u Makefile, pokrenite `make qemu` i u xv6 promptu pokrenite `javni_test`. Oba porta se prevode bez upozorenja sa sopstvenim xv6 zastavicama, koje uključuju `-Werror`, nad aktuelnim zaglavljima iz upstream repozitorijuma.
+
 ## Struktura projekta
 
 ```
-inc/params.h    veličina bloka i keš linije
-inc/buddy.h     sistem parnjaka
-inc/cache.h     strukture ploče i keša, evidencija ploča
-inc/slab.h      javni interfejs, kako je dat uz postavku zadatka
-src/buddy.c     alokacija, oslobađanje i spajanje u sistemu parnjaka
-src/cache.c     raspored ploče, bit-vektor, tabela blok-ploča, liste ploča
-src/slab.c      javni interfejs, sinhronizacija, keševi malih bafera
-src/main.c      demo
-tests/          ctest testovi
+inc/params.h          veličina bloka, keš linije i poravnanje objekata
+inc/buddy.h           sistem parnjaka
+inc/cache.h           strukture ploče i keša, evidencija ploča
+inc/slab.h            javni interfejs, kako je dat uz postavku zadatka
+src/buddy.c           alokacija, oslobađanje i spajanje u sistemu parnjaka
+src/cache.c           raspored ploče, bit-vektor, tabela blok-ploča, liste ploča
+src/slab.c            javni interfejs, sinhronizacija, keševi malih bafera
+src/main.c            demo
+port/hosted/          zaglavlje porta za Windows, macOS i Linux
+port/xv6-user/        zaglavlje porta za korisničku biblioteku xv6-a
+port/xv6-kernel/      zaglavlje porta za kernel xv6-a
+port/xv6/install.sh   kopira jezgro u xv6 stablo ili pakuje izvorni kod
+tests/                ctest testovi
+docs/                 beleške o dizajnu
 ```
 
 ## Ograničenja
 
-- Jedan katanac serijalizuje sve pozive. Katanac po kešu dozvolio bi veći paralelizam.
 - `kfree` prihvata samo bafere koji su došli iz `kmalloc`-a. Objekti iz korisničkih keševa vraćaju se kroz `kmem_cache_free`.
-- Objekti su spakovani na svoju tačnu veličinu, pa veličine koje nisu umnožak poravnanja platforme daju neporavnate objekte.
 - Imena keševa duža od 29 karaktera se skraćuju.
+- xv6 portovi su prevedeni nad xv6 zaglavljima, ali još nisu pokrenuti u QEMU-u.

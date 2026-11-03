@@ -14,6 +14,7 @@
   <a href="#usage">Usage</a> ·
   <a href="#design">Design</a> ·
   <a href="#tests">Tests</a> ·
+  <a href="#xv6-ports">xv6</a> ·
   <a href="#project-layout">Project layout</a>
 </p>
 
@@ -21,7 +22,7 @@
 
 This is a project for the Operating Systems 2 course at the School of Electrical Engineering, University of Belgrade. The allocator manages a contiguous region of memory handed to it at startup, in 4 KB blocks. A buddy system keeps track of free blocks, and a slab layer on top of it serves fixed-size objects from caches, with optional constructors and destructors, plus power-of-two small buffers through `kmalloc` and `kfree`. The public interface in `inc/slab.h` follows the header handed out with the assignment.
 
-It builds and runs on macOS, Linux and Windows and ships with a demo and an automated test suite.
+It builds and runs on macOS, Linux and Windows and ships with a demo and an automated test suite. The core is platform independent: a small port header supplies the lock, the print function and the memory fill, with one implementation for hosted systems and two for xv6 on RISC-V, one for the kernel and one for the user library.
 
 ## Build
 
@@ -99,7 +100,7 @@ Every call is thread safe. Invalid frees, double frees and allocations that cann
 
 **Buddy system.** Free blocks are kept in per-order lists of power-of-two sizes. An allocation takes the smallest free block that fits and splits it down; a free merges the block with its buddy as long as the buddy is also free. The first block of the region holds the buddy's own bookkeeping.
 
-**Slab caches.** Each cache keeps three lists of slabs: empty, partial and full. A slab is a power-of-two run of blocks whose first bytes hold the slab header and a bitmap of free slots, followed by the objects. Allocation prefers partial slabs, then empty ones, and grows the cache with a new slab only when neither exists. Successive slabs start their objects at different cache-line offsets so that objects from different slabs do not compete for the same L1 lines.
+**Slab caches.** Each cache keeps three lists of slabs: empty, partial and full. A slab is a power-of-two run of blocks whose first bytes hold the slab header and a bitmap of free slots, followed by the objects, each at a stride rounded up to 8 bytes. Allocation prefers partial slabs, then empty ones, and grows the cache with a new slab only when neither exists. Successive slabs start their objects at different cache-line offsets so that objects from different slabs do not compete for the same L1 lines.
 
 **Constructors and destructors.** The constructor runs once per slot when a slab is built. A freed object is left as it is, so the caller is expected to return it in a constructed state. The destructor runs on every slot when a slab is released, either by shrinking or by destroying the cache.
 
@@ -109,7 +110,7 @@ Every call is thread safe. Invalid frees, double frees and allocations that cann
 
 **Memory.** The allocator uses only the region it was given. The buddy metadata, the block table, cache descriptors and slabs all come out of that region.
 
-**Synchronisation.** One lock guards the whole allocator: a semaphore on Windows and a pthread mutex elsewhere. The platform-specific part is a few lines at the top of `src/slab.c`.
+**Synchronisation.** Every cache has its own lock, the buddy has one, and a short lock guards the cache list while a cache is created, destroyed or its handle validated. Locks are always taken in the order list, cache, buddy. The lock type and its four operations come from the port header, so the core never names a platform.
 
 ## Tests
 
@@ -124,27 +125,48 @@ The suite lives in `tests/` and runs under ctest. Each test is a standalone prog
 | `failed_slab` | A slab that cannot be allocated leaves the heap intact |
 | `shrink` | The grown flag and the block count returned by shrink |
 | `cache_free` | Frees to the wrong cache, misaligned pointers, and moving slabs between lists |
+| `alignment` | Objects sit at an 8 byte stride regardless of the requested size |
+| `info` | The info and error output, including the occupancy percentage |
+| `threads` | Four threads allocating and freeing concurrently across their own caches and `kmalloc` |
 | `stress` | 20 000 random allocations and frees across caches and `kmalloc`, with contents verified |
 
 To run the suite under the sanitizers, add `-fsanitize=address,undefined` to the compiler flags, for example with `cmake -S . -B build -DCMAKE_C_FLAGS="-fsanitize=address,undefined"`.
 
+## xv6 ports
+
+The same core runs inside [xv6-riscv](https://github.com/mit-pdos/xv6-riscv). The port header in `port/xv6-user/` maps the allocator onto the xv6 user library with no-op locks, for running a test program as a single process. The one in `port/xv6-kernel/` maps it onto the kernel's spinlocks and `printk`, and renames the buffer free to `kmem_kfree` because the kernel already has a page-level `kfree`.
+
+`port/xv6/install.sh` copies the core and one port into an xv6 tree and prints the Makefile lines to add. It can also adapt a test program that uses the allocator API, prepending the xv6 includes and fixing the signature of `main`.
+
+```sh
+port/xv6/install.sh path/to/xv6-riscv user path/to/test/main.c   # user library port plus the test program
+port/xv6/install.sh path/to/xv6-riscv kernel                      # kernel port
+port/xv6/install.sh package allocator.zip                         # sources only, for submission
+```
+
+After the user install, add the printed Makefile lines, run `make qemu`, and run `javni_test` at the xv6 prompt. Both ports compile cleanly with xv6's own flags, which include `-Werror`, against the current upstream headers.
+
 ## Project layout
 
 ```
-inc/params.h    block size and cache-line size
-inc/buddy.h     buddy system
-inc/cache.h     slab and cache structures, slab bookkeeping
-inc/slab.h      public interface, as handed out with the assignment
-src/buddy.c     buddy allocation, deallocation and coalescing
-src/cache.c     slab layout, bitmap, block-to-slab table, slab lists
-src/slab.c      the public interface, locking, size caches
-src/main.c      demo
-tests/          ctest suite
+inc/params.h          block size, cache-line size, object alignment
+inc/buddy.h           buddy system
+inc/cache.h           slab and cache structures, slab bookkeeping
+inc/slab.h            public interface, as handed out with the assignment
+src/buddy.c           buddy allocation, deallocation and coalescing
+src/cache.c           slab layout, bitmap, block-to-slab table, slab lists
+src/slab.c            the public interface, locking, size caches
+src/main.c            demo
+port/hosted/          port header for Windows, macOS and Linux
+port/xv6-user/        port header for the xv6 user library
+port/xv6-kernel/      port header for the xv6 kernel
+port/xv6/install.sh   copies the core into an xv6 tree, or packages the sources
+tests/                ctest suite
+docs/                 design notes
 ```
 
 ## Known limits
 
-- A single lock serialises every call. Per-cache locking would allow more concurrency.
 - `kfree` accepts only buffers that came from `kmalloc`. Objects from user caches must go back through `kmem_cache_free`.
-- Objects are packed at their exact size, so sizes that are not a multiple of the platform's alignment yield unaligned objects.
 - Cache names longer than 29 characters are truncated.
+- The xv6 ports have been cross-compiled against xv6's headers but not yet booted in QEMU.

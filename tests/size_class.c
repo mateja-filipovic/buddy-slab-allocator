@@ -1,5 +1,9 @@
+#include <string.h>
+
 #include "cache.h"
 #include "check.h"
+
+extern kmem_cache_s* cache_list_head;
 
 static int reference(unsigned long n) {
 	int p = 0;
@@ -17,9 +21,14 @@ int main(void) {
 	kmem_init(space, 1000);
 	CHECK(BUDDY->max_order == 10);
 
+	CHECK(cache_list_head == NULL);
+
 	void* p = kmalloc(1024);
 	CHECK(p != NULL);
 	CHECK(slab_of(p)->cache->obj_size == 1024);
+	CHECK(strcmp(slab_of(p)->cache->name, "size-1024") == 0);
+	CHECK(slab_of(p)->cache->is_size_cache);
+	CHECK(cache_list_head == slab_of(p)->cache && cache_list_head->next == NULL);
 
 	void* q = kmalloc(1025);
 	CHECK(slab_of(q)->cache->obj_size == 2048);

@@ -1,8 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include "../inc/cache.h"
+#include "kmem_port.h"
+#include "cache.h"
 
 static slab_s** block_owner;
 
@@ -26,13 +23,13 @@ slab_s* slab_of(const void* addr) {
 	return block_owner[block_index(addr)];
 }
 
-void slab_layout(int obj_size, int block_num, int* obj_offset, int* capacity) {
+void slab_layout(int stride, int block_num, int* obj_offset, int* capacity) {
 	int total = block_num * BLOCK_SIZE;
-	int bitvec_bytes = (total / obj_size + 7) / 8;
+	int bitvec_bytes = (total / stride + 7) / 8;
 	int header = (int)sizeof(slab_s) + bitvec_bytes;
 	header = (header + CACHE_L1_LINE_SIZE - 1) / CACHE_L1_LINE_SIZE * CACHE_L1_LINE_SIZE;
 	*obj_offset = header;
-	*capacity = (total - header) / obj_size;
+	*capacity = (total - header) / stride;
 }
 
 slab_s* allocate_a_slab(kmem_cache_s* cache, int offs) {
@@ -45,14 +42,14 @@ slab_s* allocate_a_slab(kmem_cache_s* cache, int offs) {
 	}
 
 	int obj_offset, capacity;
-	slab_layout(cache->obj_size, cache->blocks_per_slab, &obj_offset, &capacity);
+	slab_layout(cache->stride, cache->blocks_per_slab, &obj_offset, &capacity);
 
 	sl->starting_addr = (char*)sl + obj_offset + offs;      //always cast to char* cos of pointer arithmetic!!
 	sl->ending_addr = (char*)sl + BLOCK_SIZE * cache->blocks_per_slab;
 
 	sl->num_of_blocks = cache->blocks_per_slab;
 	sl->capacity = capacity;
-	sl->obj_size = cache->obj_size;
+	sl->stride = cache->stride;
 
 	sl->num_of_allocs = 0;
 	sl->state = 0;
@@ -162,16 +159,16 @@ int get_obj_index(slab_s* sl, const void* obj) {
 	if (obj >= sl->ending_addr || obj < sl->starting_addr)
 		return index;
 	size_t calc = (const char*)obj - (const char*)sl->starting_addr;
-	if (calc % sl->obj_size != 0)
+	if (calc % sl->stride != 0)
 		return index;
-	if (calc / sl->obj_size >= (size_t)sl->capacity)
+	if (calc / sl->stride >= (size_t)sl->capacity)
 		return index;
-	return (int)(calc / sl->obj_size);
+	return (int)(calc / sl->stride);
 }
 
 //get object address using a bit vector index
 void* get_obj_address(slab_s* sl, int index){
-	void* ret = (char*)sl->starting_addr + index * sl->obj_size;
+	void* ret = (char*)sl->starting_addr + index * sl->stride;
 	return ret;
 }
 

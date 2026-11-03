@@ -12,7 +12,7 @@ int main(void) {
 
 	kmem_cache_free(c, a);
 	kmem_cache_free(c, a);
-	CHECK(kmem_cache_error(c) == 1);
+	CHECK(kmem_cache_error(c) == KMEM_ERR_DOUBLE_FREE);
 	CHECK(c->num_of_allocated_objs == 1);
 	CHECK(c->count_partial == 1 && c->count_empty == 0);
 
